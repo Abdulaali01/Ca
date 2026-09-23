@@ -205,6 +205,7 @@ function openRowModal(tr){
 }
 function closeRowModal(){$('#rowModal').classList.remove('show');modalRowEl=null;modalRowIdx=-1}
 function saveRowModal(){
+  if(!$('#rowModal').classList.contains('show'))return;
   /* منع التكرار إذا ضغط مرتين بسرعة */
   const now=Date.now();if(now-lastModalAction<400)return;lastModalAction=now;
   const btn=$('#modalSave');
@@ -214,7 +215,7 @@ function saveRowModal(){
     let tr=modalRowEl;
     if(!tr||!tr.isConnected)tr=$('#tbody').rows[modalRowIdx]||null;
     if(!tr||!tr.isConnected){toast('⚠️ لم أجد الصف رقم '+(modalRowIdx+1));done();return}
-    const inputs=[...$('#modalFields input')];
+    const inputs=[...document.querySelectorAll('#modalFields input')];
     if(!inputs.length){toast('⚠️ حقول النافذة فارغة');done();return}
     let changed=0;const log=[];
     inputs.forEach(inp=>{
