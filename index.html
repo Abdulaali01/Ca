@@ -25,7 +25,7 @@
     aside{padding:12px;display:flex;flex-direction:column;min-height:0}.aside-title{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px}.aside-title h2{font-size:1rem;margin:0}.count{background:var(--sky);color:var(--navy);border-radius:999px;padding:3px 9px;font-weight:700}
     .backup-bar{display:flex;gap:6px;margin:8px 0 2px}.backup-bar .btn{flex:1;padding:7px 4px;font-size:.78rem}
     .records{overflow:auto;margin-top:8px;display:grid;gap:8px}.record{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;text-align:right}.record:hover{border-color:var(--blue);background:#f6fbfe}.record b{display:block}.record small{color:var(--muted)}
-    .status{position:fixed;left:16px;bottom:16px;background:#13242f;color:#fff;padding:11px 15px;border-radius:10px;box-shadow:0 5px 20px #0004;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:300}.status.show{opacity:1;transform:none}
+    .status{position:fixed;left:16px;bottom:16px;background:#13242f;color:#fff;padding:11px 15px;border-radius:10px;box-shadow:0 5px 20px #0004;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:400;max-width:92vw}.status.show{opacity:1;transform:none}
 
     /* ===== وضع التركيز ===== */
     #focusToggle{transition:.15s}
@@ -107,18 +107,18 @@
   </main>
 </div>
 
-<!-- النافذة المنبثقة لتعديل الصف -->
+<!-- النافذة المنبثقة لتعديل الصف — الحفظ يعمل بلمسة واحدة حتى مع الكيبورد مفتوح -->
 <div class="modal-overlay" id="rowModal">
   <div class="modal-box" id="modalBox">
     <div class="modal-head" id="modalHead">
       <span class="drag-dots">⠿</span>
       <h3 id="modalTitle">تعديل الصف</h3>
-      <button class="modal-close" id="modalClose" title="إغلاق">×</button>
+      <button class="modal-close" id="modalClose" title="إغلاق" onpointerdown="event.preventDefault();closeRowModal()">×</button>
     </div>
     <div class="modal-body" id="modalFields"></div>
     <div class="modal-foot">
-      <button class="btn primary" id="modalSave">💾 حفظ الصف</button>
-      <button class="btn secondary" id="modalCancel">إلغاء</button>
+      <button class="btn primary" id="modalSave" onpointerdown="event.preventDefault();saveRowModal()">💾 حفظ الصف</button>
+      <button class="btn secondary" id="modalCancel" onpointerdown="event.preventDefault();closeRowModal()">إلغاء</button>
     </div>
   </div>
 </div>
@@ -126,6 +126,9 @@
 <div class="status" id="status"></div>
 <div id="printArea"><img id="printImg" alt=""></div>
 <script>
+/* ===== كاشف أخطاء عام: أي خطأ في الصفحة يظهر فوراً ===== */
+window.addEventListener('error',e=>{try{toast('⚠️ خطأ: '+(e.message||'غير معروف')+(e.lineno?' (سطر '+e.lineno+')':''))}catch(_){}});
+
 const DEFAULT_HEADERS=['م','نوع السيارة','اللون','رقم اللوحة','الحالة'];let currentHeaders=[...DEFAULT_HEADERS];
 const $=s=>document.querySelector(s);let currentId=null,imageData='',zoom=1,records=[];
 const dbp=new Promise((resolve,reject)=>{const q=indexedDB.open('imageTableEditorDB',1);q.onupgradeneeded=()=>q.result.createObjectStore('records',{keyPath:'id'});q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
@@ -167,7 +170,7 @@ function norm(s){return String(s??'')
   .toLowerCase()
   .replace(/[^a-z0-9\u0600-\u06FF]/g,'');}
 
-function toast(t){const s=$('#status');s.textContent=t;s.classList.add('show');setTimeout(()=>s.classList.remove('show'),2500)}
+function toast(t){const s=$('#status');s.textContent=t;s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3000)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function renderHeaders(){const h=$('#headerRow');h.innerHTML=currentHeaders.map((v,i)=>`<th class="${i===0?'num':''}">${esc(v)}</th>`).join('')+'<th class="row-actions"></th>'}
 
@@ -185,8 +188,8 @@ function tableRows(){return [...$('#tbody').rows].map(r=>[...r.querySelectorAll(
 function loadRows(rows,headers=DEFAULT_HEADERS){currentHeaders=headers?.length?[...headers]:[...DEFAULT_HEADERS];renderHeaders();$('#tbody').innerHTML='';(rows?.length?rows:[currentHeaders.map(()=> '')]).forEach(addRow);setFocusRow(-1)}
 function convertText(){const text=$('#sourceText').value.trim();if(!text)return toast('الصق النص أولًا');const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);let parsed=[];const pipeLines=lines.filter(x=>x.includes('|'));if(pipeLines.length){parsed=pipeLines.map(line=>line.replace(/^\||\|$/g,'').split('|').map(x=>x.trim())).filter(row=>!row.every(x=>/^:?-{3,}:?$/.test(x)))}else{parsed=lines.filter(x=>x.includes('\t')).map(x=>x.split('\t').map(v=>v.trim()))}if(parsed.length<2)return toast('لم أجد جدولًا في النص؛ تأكد من وجود | بين الأعمدة');const width=Math.max(...parsed.map(r=>r.length));parsed=parsed.filter(r=>r.length===width);const first=parsed[0];const looksHeader=first.some(v=>/^(م|الرقم|نوع|اللون|رقم|الحالة|الاسم|التاريخ)/.test(v));currentHeaders=looksHeader?first:Array.from({length:width},(_,i)=>`العمود ${i+1}`);loadRows(looksHeader?parsed.slice(1):parsed,currentHeaders);toast('تم تحويل النص إلى جدول')}
 
-/* ===== النافذة المنبثقة — نسخة محصّنة ===== */
-let modalRowEl=null,modalRowIdx=-1;
+/* ===== النافذة المنبثقة — نسخة محصّنة بالكامل ===== */
+let modalRowEl=null,modalRowIdx=-1,lastModalAction=0;
 function openRowModal(tr){
   if(!tr)return;
   modalRowEl=tr;
@@ -194,6 +197,7 @@ function openRowModal(tr){
   const vals=[...tr.cells].slice(0,currentHeaders.length).map(c=>c.querySelector('input')?.value??'');
   $('#modalTitle').textContent='✎ تعديل الصف رقم '+(modalRowIdx+1);
   $('#modalFields').innerHTML=currentHeaders.map((h,c)=>`<div><label>${esc(h)}</label><input type="text" data-col="${c}" value="${esc(vals[c])}"></div>`).join('');
+  $('#modalSave').textContent='💾 حفظ الصف';
   const box=$('#modalBox');
   box.style.left='50%';box.style.top='50%';box.style.transform='translate(-50%,-50%)';
   $('#rowModal').classList.add('show');
@@ -201,32 +205,44 @@ function openRowModal(tr){
 }
 function closeRowModal(){$('#rowModal').classList.remove('show');modalRowEl=null;modalRowIdx=-1}
 function saveRowModal(){
-  /* الوصول للصف: بالمرجع المباشر، وإن فشل بالرقم المخزن */
-  let tr=modalRowEl;
-  if(!tr||!tr.isConnected)tr=$('#tbody').rows[modalRowIdx]||null;
-  if(!tr||!tr.isConnected){toast('⚠️ تعذر الحفظ: لم يتم العثور على الصف');return}
-  let changed=0,fail=0;
-  [...$('#modalFields input')].forEach(inp=>{
-    const c=+inp.dataset.col,cell=tr.cells[c];
-    const input=cell?.querySelector('input');
-    if(!input){fail++;return}
-    const nv=inp.value;
-    if(input.value!==nv){
-      input.value=nv;
-      input.dispatchEvent(new Event('input',{bubbles:true}));
-      cell.classList.add('changed');
-      changed++;
-    }
-  });
-  if(fail)toast('⚠️ بعض الخلايا لم تُحدَّث');
-  else toast(changed?`✅ تم تحديث الصف ${modalRowIdx+1} (${changed} خلية)`:'لم يكن هناك تغييرات');
-  closeRowModal();
+  /* منع التكرار إذا ضغط مرتين بسرعة */
+  const now=Date.now();if(now-lastModalAction<400)return;lastModalAction=now;
+  const btn=$('#modalSave');
+  btn.textContent='⏳ جارٍ الحفظ…';
+  const done=()=>btn.textContent='💾 حفظ الصف';
+  try{
+    let tr=modalRowEl;
+    if(!tr||!tr.isConnected)tr=$('#tbody').rows[modalRowIdx]||null;
+    if(!tr||!tr.isConnected){toast('⚠️ لم أجد الصف رقم '+(modalRowIdx+1));done();return}
+    const inputs=[...$('#modalFields input')];
+    if(!inputs.length){toast('⚠️ حقول النافذة فارغة');done();return}
+    let changed=0;const log=[];
+    inputs.forEach(inp=>{
+      const c=+inp.dataset.col;
+      const cell=tr.cells[c];
+      const tInput=cell?cell.querySelector('input'):null;
+      const oldV=tInput?tInput.value:'(لا خلية)';
+      const nv=inp.value;
+      if(tInput&&oldV!==nv){
+        tInput.value=nv;
+        tInput.dispatchEvent(new Event('input',{bubbles:true}));
+        cell.classList.add('changed');
+        changed++;log.push(currentHeaders[c]+': «'+oldV+'» ← «'+nv+'»');
+      }
+    });
+    if(changed){toast('✅ حُفظ '+changed+' خلية | '+log[0])}
+    else{toast('⚠️ لا تغيير | النافذة: «'+inputs.map(i=>i.value).join(' | ')+'» <> الجدول: «'+[...tr.cells].slice(0,currentHeaders.length).map(c=>c.querySelector('input')?.value??'').join(' | ')+'»')}
+    closeRowModal();
+  }catch(err){toast('⚠️ خطأ أثناء الحفظ: '+err.message)}
+  done();
 }
-$('#modalSave').onclick=saveRowModal;
-$('#modalCancel').onclick=closeRowModal;
-$('#modalClose').onclick=closeRowModal;
+/* أزرار النافذة: تعمل بلمسة pointerdown (قبل قفزة الكيبورد) + click احتياطاً */
+$('#modalSave').addEventListener('pointerdown',e=>{e.preventDefault();saveRowModal()});
+$('#modalSave').addEventListener('click',e=>{e.preventDefault();saveRowModal()});
+$('#modalCancel').addEventListener('pointerdown',e=>{e.preventDefault();closeRowModal()});
+$('#modalClose').addEventListener('pointerdown',e=>{e.preventDefault();closeRowModal()});
 $('#rowModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRowModal()});
-/* السحب من شريط العنوان (يدعم اللمس والفأرة) */
+/* السحب من شريط العنوان */
 (function(){
   const head=$('#modalHead'),box=$('#modalBox');
   let dragging=false,offX=0,offY=0;
