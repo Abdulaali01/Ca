@@ -176,7 +176,6 @@ function addRow(vals=[]){
   const tr=document.createElement('tr');
   tr.innerHTML=data.map((v,i)=>`<td class="${i===0?'num':''}"><input value="${esc(v)}" aria-label="${esc(currentHeaders[i])}" ${i===0?'readOnly':''} title="${i===0?'اضغط لفتح نافذة تعديل الصف':''}"></td>`).join('')+`<td class="row-actions"><button class="remove" title="حذف الصف">×</button></td>`;
   tr.querySelector('.remove').onclick=()=>{if(modalRowEl===tr)closeRowModal();tr.remove();renumber();if(focusRowIndex>=0)setFocusRow(Math.min(focusRowIndex,[...$('#tbody').rows].length-1))};
-  /* فتح النافذة المنبثقة: بالضغط على خانة (م) أو بالنقر المزدوج على أي خلية */
   tr.cells[0].addEventListener('click',()=>openRowModal(tr));
   tr.addEventListener('dblclick',e=>{if(e.target.matches('input,td'))openRowModal(tr)});
   $('#tbody').appendChild(tr);
@@ -186,29 +185,31 @@ function tableRows(){return [...$('#tbody').rows].map(r=>[...r.querySelectorAll(
 function loadRows(rows,headers=DEFAULT_HEADERS){currentHeaders=headers?.length?[...headers]:[...DEFAULT_HEADERS];renderHeaders();$('#tbody').innerHTML='';(rows?.length?rows:[currentHeaders.map(()=> '')]).forEach(addRow);setFocusRow(-1)}
 function convertText(){const text=$('#sourceText').value.trim();if(!text)return toast('الصق النص أولًا');const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);let parsed=[];const pipeLines=lines.filter(x=>x.includes('|'));if(pipeLines.length){parsed=pipeLines.map(line=>line.replace(/^\||\|$/g,'').split('|').map(x=>x.trim())).filter(row=>!row.every(x=>/^:?-{3,}:?$/.test(x)))}else{parsed=lines.filter(x=>x.includes('\t')).map(x=>x.split('\t').map(v=>v.trim()))}if(parsed.length<2)return toast('لم أجد جدولًا في النص؛ تأكد من وجود | بين الأعمدة');const width=Math.max(...parsed.map(r=>r.length));parsed=parsed.filter(r=>r.length===width);const first=parsed[0];const looksHeader=first.some(v=>/^(م|الرقم|نوع|اللون|رقم|الحالة|الاسم|التاريخ)/.test(v));currentHeaders=looksHeader?first:Array.from({length:width},(_,i)=>`العمود ${i+1}`);loadRows(looksHeader?parsed.slice(1):parsed,currentHeaders);toast('تم تحويل النص إلى جدول')}
 
-/* ===== النافذة المنبثقة القابلة للسحب — حفظ مضمون عبر مرجع مباشر للصف ===== */
-let modalRowEl=null,modalOrig=[];
+/* ===== النافذة المنبثقة — نسخة محصّنة ===== */
+let modalRowEl=null,modalRowIdx=-1;
 function openRowModal(tr){
-  if(!tr||!tr.isConnected)return;
+  if(!tr)return;
   modalRowEl=tr;
-  const vals=[...tr.querySelectorAll('input')].map(x=>x.value);
-  modalOrig=[...vals];
-  const idx=[...$('#tbody').rows].indexOf(tr);
-  $('#modalTitle').textContent='✎ تعديل الصف رقم '+(idx+1);
-  $('#modalFields').innerHTML=currentHeaders.map((h,c)=>`<div><label>${esc(h)}</label><input type="text" data-col="${c}" value="${esc(vals[c]??'')}" placeholder="${esc(h)}"></div>`).join('');
+  modalRowIdx=[...$('#tbody').rows].indexOf(tr);
+  const vals=[...tr.cells].slice(0,currentHeaders.length).map(c=>c.querySelector('input')?.value??'');
+  $('#modalTitle').textContent='✎ تعديل الصف رقم '+(modalRowIdx+1);
+  $('#modalFields').innerHTML=currentHeaders.map((h,c)=>`<div><label>${esc(h)}</label><input type="text" data-col="${c}" value="${esc(vals[c])}"></div>`).join('');
   const box=$('#modalBox');
   box.style.left='50%';box.style.top='50%';box.style.transform='translate(-50%,-50%)';
   $('#rowModal').classList.add('show');
   setTimeout(()=>$('#modalFields input')?.focus(),60);
 }
-function closeRowModal(){$('#rowModal').classList.remove('show');modalRowEl=null;modalOrig=[]}
+function closeRowModal(){$('#rowModal').classList.remove('show');modalRowEl=null;modalRowIdx=-1}
 function saveRowModal(){
-  if(!modalRowEl||!modalRowEl.isConnected){closeRowModal();return toast('تعذر الحفظ: الصف غير موجود')}
-  let changed=0;
+  /* الوصول للصف: بالمرجع المباشر، وإن فشل بالرقم المخزن */
+  let tr=modalRowEl;
+  if(!tr||!tr.isConnected)tr=$('#tbody').rows[modalRowIdx]||null;
+  if(!tr||!tr.isConnected){toast('⚠️ تعذر الحفظ: لم يتم العثور على الصف');return}
+  let changed=0,fail=0;
   [...$('#modalFields input')].forEach(inp=>{
-    const c=+inp.dataset.col,cell=modalRowEl.cells[c];
-    if(!cell)return;
-    const input=cell.querySelector('input');
+    const c=+inp.dataset.col,cell=tr.cells[c];
+    const input=cell?.querySelector('input');
+    if(!input){fail++;return}
     const nv=inp.value;
     if(input.value!==nv){
       input.value=nv;
@@ -217,9 +218,9 @@ function saveRowModal(){
       changed++;
     }
   });
-  const idx=[...$('#tbody').rows].indexOf(modalRowEl);
+  if(fail)toast('⚠️ بعض الخلايا لم تُحدَّث');
+  else toast(changed?`✅ تم تحديث الصف ${modalRowIdx+1} (${changed} خلية)`:'لم يكن هناك تغييرات');
   closeRowModal();
-  toast(changed?`تم تحديث الصف ${idx+1} (${changed} خلية)`:'لم يكن هناك تغييرات');
 }
 $('#modalSave').onclick=saveRowModal;
 $('#modalCancel').onclick=closeRowModal;
